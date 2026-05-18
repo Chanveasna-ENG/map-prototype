@@ -28,12 +28,12 @@ export async function GET(): Promise<NextResponse<GetMapPayloadResponse>> {
 function validateEdges(body: UpdateMapRequest): string[] {
   const wallSet = new Set<string>();
   for (let i = 0; i < body.walls.length; i++) {
-    const [x, y] = body.walls[i];
-    wallSet.add(`${x},${y}`);
+    const [x, y, z] = body.walls[i];
+    wallSet.add(`${x},${y},${z}`);
   }
 
-  const isWall = (x: number, y: number, _z: number): boolean => {
-    return wallSet.has(`${x},${y}`);
+  const isWall = (x: number, y: number, z: number): boolean => {
+    return wallSet.has(`${x},${y},${z}`);
   };
 
   const failedEdges: string[] = [];

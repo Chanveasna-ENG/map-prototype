@@ -18,7 +18,8 @@ export async function readMapPayload(): Promise<MapPayload> {
     return JSON.parse(data) as MapPayload;
   } catch {
     return {
-      meta: { width: 0, height: 0 },
+      meta: { width: 0, height: 0, zoomFactor: 1 },
+      floors: { "1": { name: "Floor 1" } },
       walls: [],
       nodes: {},
       rooms: {},
