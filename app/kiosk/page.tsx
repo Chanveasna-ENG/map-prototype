@@ -17,23 +17,64 @@ function useMapPayload(): MapPayload | null {
   return payload;
 }
 
+function addTeleporterEdges(nodesCopy: Record<string, { edges: Record<string, number> }>, coords: string[]): void {
+  for (let i = 0; i < coords.length; i++) {
+    for (let j = i + 1; j < coords.length; j++) {
+      const c1 = coords[i];
+      const c2 = coords[j];
+      if (!nodesCopy[c1]) { nodesCopy[c1] = { edges: {} }; }
+      if (!nodesCopy[c2]) { nodesCopy[c2] = { edges: {} }; }
+      nodesCopy[c1].edges[c2] = 20;
+      nodesCopy[c2].edges[c1] = 20;
+    }
+  }
+}
+
+function buildTeleporterGraph(payload: MapPayload): Record<string, { edges: Record<string, number> }> {
+  const nodesCopy: Record<string, { edges: Record<string, number> }> = {};
+  for (const k in payload.nodes) {
+    nodesCopy[k] = { edges: { ...payload.nodes[k].edges } };
+  }
+
+  const byId: Record<string, string[]> = {};
+  for (const [coord, tel] of Object.entries(payload.teleporters)) {
+    if (!byId[tel.teleporter_id]) { byId[tel.teleporter_id] = []; }
+    byId[tel.teleporter_id].push(coord);
+  }
+
+  const groups = Object.values(byId);
+  for (let g = 0; g < groups.length; g++) {
+    addTeleporterEdges(nodesCopy, groups[g]);
+  }
+  return nodesCopy;
+}
+
 function useAstarPath(payload: MapPayload | null, startKey: string | null, destKey: string | null): string[] {
   return React.useMemo(() => {
-    if (payload && startKey && destKey) {
-      return astar(startKey, destKey, payload.nodes);
-    }
-    return [];
+    if (!payload || !startKey || !destKey) { return []; }
+    const nodesCopy = buildTeleporterGraph(payload);
+    return astar(startKey, destKey, nodesCopy);
   }, [payload, startKey, destKey]);
 }
 
 function getNextFloorCue(drawnPath: string[], currentFloor: number): number | null {
+  if (drawnPath.length === 0) { return null; }
+  
+  let lastCurrentFloorIdx = -1;
   for (let i = 0; i < drawnPath.length; i++) {
-    const parts = drawnPath[i].split(",");
-    const z = Number(parts[2]);
-    if (z !== currentFloor) {
-      return z;
+    if (Number(drawnPath[i].split(",")[2]) === currentFloor) {
+      lastCurrentFloorIdx = i;
     }
   }
+  
+  if (lastCurrentFloorIdx === -1) {
+    return Number(drawnPath[0].split(",")[2]);
+  }
+  
+  if (lastCurrentFloorIdx < drawnPath.length - 1) {
+    return Number(drawnPath[lastCurrentFloorIdx + 1].split(",")[2]);
+  }
+  
   return null;
 }
 
@@ -105,20 +146,23 @@ function KioskControls({
 
 function FloorSelector({ 
   currentFloor, 
-  setCurrentFloor 
+  setCurrentFloor,
+  floors,
 }: { 
   currentFloor: number; 
-  setCurrentFloor: (f: number) => void; 
+  setCurrentFloor: (f: number) => void;
+  floors: Record<string, { name: string }>;
 }): React.ReactNode {
+  const sorted = Object.entries(floors).sort((a, b) => Number(a[0]) - Number(b[0]));
   return (
     <div className="flex gap-4">
-      {[1, 2, 3].map((f) => (
+      {sorted.map(([z, fl]) => (
         <button 
-          key={f}
-          onClick={(): void => setCurrentFloor(f)} 
-          className={`px-4 py-2 rounded ${currentFloor === f ? "bg-blue-600" : "bg-zinc-800"}`}
+          key={z}
+          onClick={(): void => setCurrentFloor(Number(z))} 
+          className={`px-4 py-2 rounded ${currentFloor === Number(z) ? "bg-blue-600" : "bg-zinc-800"}`}
         >
-          Floor {f}
+          {fl.name}
         </button>
       ))}
     </div>
@@ -131,20 +175,21 @@ interface HeaderProps {
   startKey: string | null;
   destKey: string | null;
   nextFloor: number | null;
+  floors: Record<string, { name: string }>;
 }
 
 function KioskHeader(props: HeaderProps): React.ReactNode {
-  const { currentFloor, setCurrentFloor, startKey, destKey, nextFloor } = props;
+  const { currentFloor, setCurrentFloor, startKey, destKey, nextFloor, floors } = props;
   return (
     <header className="mb-4 flex flex-col gap-2">
       <h1 className="text-3xl font-bold">Campus Kiosk</h1>
-      <FloorSelector currentFloor={currentFloor} setCurrentFloor={setCurrentFloor} />
+      <FloorSelector currentFloor={currentFloor} setCurrentFloor={setCurrentFloor} floors={floors} />
       <div className="text-sm text-zinc-400">
         Start: {startKey || "Select marker"} | Dest: {destKey || "Select marker"}
       </div>
       {nextFloor !== null && (
         <div className="bg-emerald-900/50 p-4 rounded flex justify-between">
-          <span>Path continues on Floor {nextFloor}</span>
+          <span>Path continues on {floors[String(nextFloor)]?.name ?? `Floor ${nextFloor}`}</span>
           <button onClick={(): void => setCurrentFloor(nextFloor)} className="bg-emerald-600 px-3 py-1 rounded">
             Switch
           </button>
@@ -160,7 +205,8 @@ export default function KioskPage(): React.ReactNode {
   const [startKey, setStartKey] = useState<string | null>(null);
   const [destKey, setDestKey] = useState<string | null>(null);
   
-  const [zoom, setZoom] = useState(1);
+  const defaultZoom = payload?.meta?.zoomFactor ?? 1;
+  const [zoom, setZoom] = useState(defaultZoom);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   
@@ -184,7 +230,8 @@ export default function KioskPage(): React.ReactNode {
         setCurrentFloor={setCurrentFloor} 
         startKey={startKey} 
         destKey={destKey} 
-        nextFloor={nextFloor} 
+        nextFloor={nextFloor}
+        floors={payload.floors ?? {}}
       />
 
       <div className="relative border border-zinc-800 cursor-crosshair inline-block" onClick={onCanvasClick}>
