@@ -1,4 +1,4 @@
-FROM node:18-alpine AS base
+FROM node:jod-alpine3.23 AS base
 
 # 1. Install dependencies
 FROM base AS deps
