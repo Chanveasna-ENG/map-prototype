@@ -539,24 +539,86 @@ function FloorRow({ payload, setPayload, z, floor, setFloor, name }: { payload: 
   );
 }
 
+interface FloorImageUploadConfig {
+  file: File;
+  payload: MapPayload;
+  setPayload: (p: MapPayload) => void;
+  setFloor: (f: number) => void;
+}
+
+async function handleFloorImageUpload(config: FloorImageUploadConfig): Promise<void> {
+  const { file, payload, setPayload, setFloor } = config;
+  const nextZ = Math.max(...Object.keys(payload.floors).map(Number)) + 1;
+  const gridWidth = payload.meta.width || 500;
+  const gridHeight = payload.meta.height || 300;
+
+  const { processMapImage } = await import("@/src/image-processing/image-processor");
+  const newWalls = await processMapImage({ file, gridWidth, gridHeight, floor: nextZ });
+
+  const newP = {
+    ...payload,
+    floors: {
+      ...payload.floors,
+      [String(nextZ)]: { name: `Floor ${nextZ}` }
+    },
+    walls: [...payload.walls, ...newWalls]
+  };
+
+  setPayload(newP);
+  setFloor(nextZ);
+}
+
+function addNewFloor(
+  payload: MapPayload,
+  setPayload: (p: MapPayload) => void,
+  setFloor: (f: number) => void
+): void {
+  const nextZ = Math.max(...Object.keys(payload.floors).map(Number)) + 1;
+  const newP = { ...payload, floors: { ...payload.floors } };
+  newP.floors[String(nextZ)] = { name: `Floor ${nextZ}` };
+  setPayload(newP);
+  setFloor(nextZ);
+}
+
 function FloorManager({ payload, setPayload, floor, setFloor }: { payload: MapPayload; setPayload: (p: MapPayload) => void; floor: number; setFloor: (f: number) => void }): React.ReactNode {
   const sortedFloors = Object.entries(payload.floors).sort((a, b) => Number(a[0]) - Number(b[0]));
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const file = e.target.files?.[0];
+    if (!file) { return; }
+    handleFloorImageUpload({ file, payload, setPayload, setFloor })
+      .catch((err: unknown) => alert(err instanceof Error ? err.message : "Failed to process image"))
+      .finally(() => { if (fileInputRef.current) { fileInputRef.current.value = ""; } });
+  };
+
   return (
     <div className="p-4 bg-zinc-900 border border-zinc-700 rounded flex flex-col gap-3 mt-4">
       <h3 className="font-bold">Floor Manager</h3>
       {sortedFloors.map(([z, fl]) => (
         <FloorRow key={z} payload={payload} setPayload={setPayload} z={z} floor={floor} setFloor={setFloor} name={fl.name} />
       ))}
-      <button 
-        className="bg-zinc-700 px-2 py-1 rounded text-sm hover:bg-zinc-600 mt-2"
-        onClick={(): void => {
-          const nextZ = Math.max(...Object.keys(payload.floors).map(Number)) + 1;
-          const newP = { ...payload, floors: { ...payload.floors } };
-          newP.floors[String(nextZ)] = { name: `Floor ${nextZ}` };
-          setPayload(newP);
-          setFloor(nextZ);
-        }}
-      >+ Add Floor</button>
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={onFileChange}
+        style={{ display: "none" }}
+        accept="image/*"
+      />
+      <div className="flex flex-col gap-2 mt-2">
+        <button
+          className="bg-zinc-700 px-2 py-1.5 rounded text-sm hover:bg-zinc-600 w-full text-center"
+          onClick={(): void => addNewFloor(payload, setPayload, setFloor)}
+        >
+          + Add Floor
+        </button>
+        <button
+          className="bg-blue-700 px-2 py-1.5 rounded text-sm hover:bg-blue-600 w-full text-center"
+          onClick={(): void => fileInputRef.current?.click()}
+        >
+          + Add Floor from Image
+        </button>
+      </div>
     </div>
   );
 }
